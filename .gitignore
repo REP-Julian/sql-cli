@@ -1,0 +1,17 @@
+# Local credentials and machine-specific configuration
+.env
+.env.*
+!.env.example
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+.vscode/
+build/
+dist/
+models/
+ollama/

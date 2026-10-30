@@ -192,7 +192,11 @@ class SQLCompleter(Completer):
                         items.extend(columns)
 
                 if not insert_column_list:
-                    items.extend(CLAUSE_KEYWORDS.get(latest_clause, KEYWORDS))
+                    clause_keywords = CLAUSE_KEYWORDS.get(latest_clause)
+                    # CLAUSE_KEYWORDS stores phrases as strings; split them so
+                    # prompt_toolkit completes whole words instead of one
+                    # suggestion per character (for example F, R, O, M).
+                    items.extend(clause_keywords.split() if clause_keywords else KEYWORDS)
                 if latest_clause not in NON_EXPRESSION_CONTEXTS:
                     items.extend(FUNCTIONS)
                 if not scoped_tables and latest_clause not in CLAUSE_KEYWORDS:

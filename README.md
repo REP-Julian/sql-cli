@@ -86,7 +86,13 @@ For example:
 SELECT * FROM your_table_name LIMIT 10;
 ```
 
-Press **Tab** to see suggestions for SQL words, table names, and column names. Type `:help` to see all commands. If SQLCLI says **Waiting for ;**, finish the SQL statement with `;`. Press **Ctrl+C** to cancel an unfinished line.
+Press **Tab** to see suggestions for SQL words, table names, and column names. Date and time functions are suggested too. For example, type `CUR` for `CURDATE` or `CURTIME`, or type `INTERVAL ` to see units such as `DAY`, `MONTH`, and `YEAR`.
+
+```sql
+SELECT CURRENT_DATE(), CURRENT_TIME(), NOW();
+```
+
+Type `:help` to see all commands. If SQLCLI says **Waiting for ;**, finish the SQL statement with `;`. Press **Ctrl+C** to cancel an unfinished line.
 
 ## Handy commands
 

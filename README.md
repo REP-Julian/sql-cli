@@ -58,6 +58,8 @@ This shows the databases you can access. Choose a name from the list, then repla
 
 `:use` selects the database. `:tables` then shows its tables. Replace `your_table_name` with a table name from that list:
 
+Tip: after connecting, type `:use ` and press **Tab** to complete a database name SQLCLI can access. Type `:databases` to refresh the available database names.
+
 ```text
 :describe your_table_name
 :sample your_table_name
@@ -86,7 +88,7 @@ For example:
 SELECT * FROM your_table_name LIMIT 10;
 ```
 
-Press **Tab** to see suggestions for SQL words, table names, and column names. Date and time functions are suggested too. For example, type `CUR` for `CURDATE` or `CURTIME`, or type `INTERVAL ` to see units such as `DAY`, `MONTH`, and `YEAR`.
+Press **Tab** to see suggestions for SQLCLI commands, database names, SQL words, tables, columns, and functions. Suggestions change with the SQL you're writing: after `FROM` SQLCLI offers tables, and after `WHERE` it offers columns from the tables in your query. Date and time functions are included too. For example, type `CUR` for `CURDATE` or `CURTIME`, or type `INTERVAL ` to see units such as `DAY`, `MONTH`, and `YEAR`.
 
 ```sql
 SELECT CURRENT_DATE(), CURRENT_TIME(), NOW();
@@ -105,7 +107,7 @@ Type `:help` to see all commands. If SQLCLI says **Waiting for ;**, finish the S
 | `:sample your_table_name` | Previews up to 10 rows |
 | `:sample your_table_name 5` | Previews up to 5 rows |
 | `:count your_table_name` | Counts rows in a table |
-| `:refresh` | Reloads table and column suggestions |
+| `:refresh` | Reloads database, table, and column suggestions |
 | `:help` | Shows help |
 | `:quit` | Closes SQLCLI |
 

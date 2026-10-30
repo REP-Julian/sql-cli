@@ -63,7 +63,7 @@ def print_help() -> None:
   :count <table>        Count rows in a table
   :export <file.csv> SELECT ...
                         Save a read-only SELECT result as a new CSV file
-  :refresh              Refresh schema autocomplete metadata
+  :refresh              Refresh database, table, and column suggestions
   :ai on|off|reset      Enable, disable, or reset the local AI model
   :ollama start         Start Ollama and connect the configured model
   :ollama status        Check Ollama and model connection
@@ -199,7 +199,14 @@ def main() -> None:
                             print(f"Saved {len(rows or [])} row(s) to {output.resolve()}")
                     elif command == "refresh":
                         database.refresh_schema()
-                        print(f"Loaded {len(database.tables)} tables for autocomplete.")
+                        try:
+                            database.refresh_databases()
+                        except Exception:
+                            pass  # Schema suggestions still work if SHOW DATABASES is restricted.
+                        print(
+                            f"Loaded {len(database.tables)} tables and "
+                            f"{len(database.database_names)} database name(s) for autocomplete."
+                        )
                     elif command == "ai":
                         mode = argument.strip().lower()
                         if mode == "reset":
@@ -304,6 +311,10 @@ def main() -> None:
                     print(f"Query OK, {count} row(s) affected.")
                     if safety.verb in {"CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME"}:
                         database.refresh_schema()
+                        try:
+                            database.refresh_databases()
+                        except Exception:
+                            pass  # Keep command completion working with restricted database visibility.
             except Exception as exc:
                 print(f"SQL error: {exc}")
                 print("Tip: check the table/column spelling and make sure the statement ends with ;")

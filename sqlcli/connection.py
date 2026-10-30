@@ -16,6 +16,7 @@ class Database:
     settings: Settings
     connection: MySQLConnection | None = None
     tables: dict[str, list[str]] = field(default_factory=dict)
+    database_names: list[str] = field(default_factory=list)
 
     @property
     def connected(self) -> bool:
@@ -37,12 +38,20 @@ class Database:
         self.connection = mysql.connector.connect(**options)
         self.settings.database = target
         self.refresh_schema()
+        # Cache once at connection time so live completion never sends a query
+        # for every character the user types. Some restricted accounts cannot
+        # list databases, so that optional cache must not break the connection.
+        try:
+            self.refresh_databases()
+        except mysql.connector.Error:
+            self.database_names.clear()
 
     def close(self) -> None:
         if self.connection and self.connection.is_connected():
             self.connection.close()
         self.connection = None
         self.tables.clear()
+        self.database_names.clear()
 
     def refresh_schema(self) -> None:
         if not self.connected or not self.settings.database:
@@ -63,10 +72,17 @@ class Database:
             cursor.close()
 
     def databases(self) -> list[str]:
+        self.refresh_databases()
+        return list(self.database_names)
+
+    def refresh_databases(self) -> None:
+        if not self.connected:
+            self.database_names.clear()
+            return
         cursor = self.connection.cursor()
         try:
             cursor.execute("SHOW DATABASES")
-            return [row[0] for row in cursor.fetchall()]
+            self.database_names = [row[0] for row in cursor.fetchall()]
         finally:
             cursor.close()
 

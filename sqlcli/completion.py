@@ -21,20 +21,40 @@ FUNCTIONS = "COUNT SUM AVG MIN MAX COALESCE IFNULL NULLIF CONCAT CONCAT_WS LOWER
     "TIMESTAMPADD TIMESTAMPDIFF TO_DAYS TO_SECONDS UNIX_TIMESTAMP UTC_DATE UTC_TIME " \
     "UTC_TIMESTAMP WEEK WEEKDAY WEEKOFYEAR YEARWEEK".split()
 INTERVAL_UNITS = "MICROSECOND SECOND MINUTE HOUR DAY WEEK MONTH QUARTER YEAR".split()
+COLUMN_CONTEXTS = {"SELECT", "WHERE", "ON", "SET", "GROUP BY", "ORDER BY", "HAVING", "AND", "OR"}
+NON_EXPRESSION_CONTEXTS = {
+    "FROM", "JOIN", "INSERT", "INTO", "UPDATE", "DELETE", "SHOW", "CREATE", "ALTER", "DROP", "LIMIT",
+}
 TABLE_WORDS = {
     "WHERE", "JOIN", "ON", "SET", "ORDER", "GROUP", "LIMIT", "HAVING", "LEFT", "RIGHT",
     "INNER", "OUTER", "CROSS", "FULL", "UNION", "VALUES", "USING", "FOR", "WINDOW",
 }
-COLUMN_CLAUSE = re.compile(r"\b(SELECT|WHERE|ON|SET|BY|HAVING|AND|OR)\b", re.IGNORECASE)
+SQL_CONTEXT = re.compile(
+    r"\b(SELECT|FROM|WHERE|JOIN|ON|SET|GROUP\s+BY|ORDER\s+BY|HAVING|AND|OR|"
+    r"INSERT|INTO|UPDATE|DELETE|SHOW|CREATE|ALTER|DROP|LIMIT)\b",
+    re.IGNORECASE,
+)
 CLAUSE_KEYWORDS = {
-    "SELECT": "DISTINCT AS FROM CASE WHEN THEN ELSE END",
+    "SELECT": "DISTINCT AS FROM CASE WHEN THEN ELSE END *",
+    "FROM": "JOIN LEFT RIGHT INNER CROSS WHERE GROUP BY ORDER BY LIMIT",
+    "JOIN": "ON USING LEFT RIGHT INNER CROSS",
     "WHERE": "AND OR NOT NULL IS IN LIKE BETWEEN",
     "ON": "AND OR NOT NULL IS IN LIKE BETWEEN",
     "SET": "DEFAULT NULL",
-    "BY": "ASC DESC",
+    "GROUP BY": "ASC DESC WITH ROLLUP",
+    "ORDER BY": "ASC DESC",
     "HAVING": "AND OR NOT NULL IS IN LIKE BETWEEN",
     "AND": "NOT NULL IS IN LIKE BETWEEN",
     "OR": "NOT NULL IS IN LIKE BETWEEN",
+    "INSERT": "INTO",
+    "INTO": "VALUES SELECT",
+    "UPDATE": "SET",
+    "DELETE": "FROM",
+    "SHOW": "DATABASES TABLES COLUMNS STATUS VARIABLES",
+    "CREATE": "DATABASE TABLE INDEX VIEW",
+    "ALTER": "TABLE DATABASE",
+    "DROP": "DATABASE TABLE INDEX VIEW",
+    "LIMIT": "OFFSET",
 }
 
 
@@ -101,6 +121,8 @@ class SQLCompleter(Completer):
         command, word = argument_match.groups()
         command = command.lower()
         items = list(self.COMMAND_ARGUMENTS.get(command, ()))
+        if command in {"use", "connect"}:
+            items.extend(self.database.database_names)
         if command in {"describe", "columns", "sample", "count"}:
             items.extend(self.database.tables)
         items.extend(self.plugins.completions(text))
@@ -125,7 +147,7 @@ class SQLCompleter(Completer):
             return
 
         # A trailing table clause expects table names, not every SQL keyword.
-        table_match = re.search(r"\b(?:FROM|JOIN|UPDATE|INTO)\s+([\w$`]*)$", text, re.IGNORECASE)
+        table_match = re.search(r"\b(?:FROM|JOIN|UPDATE|INTO|DESCRIBE)\s+([\w$`]*)$", text, re.IGNORECASE)
         if table_match:
             items = list(self.database.tables)
             start_position = -len(raw_word)
@@ -143,28 +165,36 @@ class SQLCompleter(Completer):
             else:
                 start_position = -len(raw_word)
                 items = []
-                latest_clause = None
-                for match in COLUMN_CLAUSE.finditer(text):
-                    latest_clause = match.group(1).upper()
+                context_matches = list(SQL_CONTEXT.finditer(text))
+                latest_clause = context_matches[-1].group(1).upper() if context_matches else None
+                if latest_clause:
+                    latest_clause = " ".join(latest_clause.split())
+                insert_column_list = re.search(
+                    r"\bINSERT\s+INTO\s+`?([\w$]+)`?\s*\([^)]*$", text, re.IGNORECASE
+                )
+                column_context = latest_clause in COLUMN_CONTEXTS or bool(insert_column_list)
 
                 # Offer columns from tables already named in this query. If no
                 # table has appeared yet, use this database's schema as a guide.
                 scoped_tables = list(dict.fromkeys(aliases.values()))
                 if scoped_tables:
-                    for table in scoped_tables:
-                        items.extend(self.database.tables.get(table, []))
-                    # Also offer valid aliases and table-qualified columns in
-                    # joins, where unqualified names can be ambiguous.
-                    if len(scoped_tables) > 1:
-                        items.extend(aliases.keys())
-                        for alias, table in aliases.items():
-                            items.extend(f"{alias}.{column}" for column in self.database.tables.get(table, []))
-                elif latest_clause in {"SELECT", "WHERE", "ON", "SET", "BY", "HAVING", "AND", "OR"}:
+                    if column_context:
+                        for table in scoped_tables:
+                            items.extend(self.database.tables.get(table, []))
+                        # Also offer valid aliases and table-qualified columns
+                        # in joins, where unqualified names can be ambiguous.
+                        if len(scoped_tables) > 1:
+                            items.extend(aliases.keys())
+                            for alias, table in aliases.items():
+                                items.extend(f"{alias}.{column}" for column in self.database.tables.get(table, []))
+                elif column_context:
                     for columns in self.database.tables.values():
                         items.extend(columns)
 
-                items.extend(CLAUSE_KEYWORDS.get(latest_clause, KEYWORDS))
-                items.extend(FUNCTIONS)
+                if not insert_column_list:
+                    items.extend(CLAUSE_KEYWORDS.get(latest_clause, KEYWORDS))
+                if latest_clause not in NON_EXPRESSION_CONTEXTS:
+                    items.extend(FUNCTIONS)
                 if not scoped_tables and latest_clause not in CLAUSE_KEYWORDS:
                     items.extend(self.database.tables.keys())
 

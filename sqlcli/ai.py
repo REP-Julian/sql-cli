@@ -5,16 +5,41 @@ from __future__ import annotations
 import json
 import os
 import re
+from difflib import SequenceMatcher
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from .resource_guard import require_ai_resources
+from .sql_safety import inspect_sql
+
+
+def _generate(prompt: str, url: str, model: str, max_tokens: int) -> str:
+    """Call the local model with conservative CPU-only settings."""
+    threads = max(1, min(4, (os.cpu_count() or 2) // 4))
+    payload = json.dumps({
+        "model": model,
+        "prompt": prompt,
+        "stream": False,
+        "keep_alive": 0,
+        "options": {
+            "num_ctx": 4096,
+            "num_thread": threads,
+            "num_gpu": 0,
+            "num_predict": max_tokens,
+            "temperature": 0,
+        },
+    }).encode()
+    request = Request(f"{url}/api/generate", data=payload, headers={"Content-Type": "application/json"})
+    with urlopen(request, timeout=180) as response:
+        return json.loads(response.read().decode()).get("response", "").strip()
 
 def suggest_sql(question: str, database, url: str, model: str) -> str:
     require_ai_resources()
     schema = "\n".join(f"{table}: {', '.join(columns)}" for table, columns in database.tables.items())
     instructions = (
         "You are a careful MySQL query writer helping a beginner. "
+        "The user's wording may contain spelling or grammar mistakes. Silently correct obvious typos in your understanding, "
+        "but ask a short clarification if the intended meaning is uncertain. "
         "For a clear request to find or summarize data, return exactly one SELECT statement. "
         "For an explicit request to update or delete a specific record, you may return exactly one UPDATE or DELETE statement, "
         "but it must include a precise WHERE condition copied from the request. "
@@ -30,30 +55,12 @@ def suggest_sql(question: str, database, url: str, model: str) -> str:
         "Keep the requested row limit. Add a semicolon.\n\n"
         f"Database: {database.settings.database or '(not selected)'}\n"
     )
-    # Keep local inference conservative for CPU-only laptops: use a short
-    # context, limit worker threads, force CPU, and release the model after use.
-    threads = max(1, min(4, (os.cpu_count() or 2) // 4))
     def generate(schema_text: str) -> str:
         prompt = (
             f"{instructions}Schema:\n{schema_text or '(no schema loaded; do not invent table or column names)'}\n\n"
             f"User request: {question}\nSQL:"
         )
-        payload = json.dumps({
-            "model": model,
-            "prompt": prompt,
-            "stream": False,
-            "keep_alive": 0,
-            "options": {
-                "num_ctx": 4096,
-                "num_thread": threads,
-                "num_gpu": 0,
-                "num_predict": 120,
-                "temperature": 0,
-            },
-        }).encode()
-        request = Request(f"{url}/api/generate", data=payload, headers={"Content-Type": "application/json"})
-        with urlopen(request, timeout=180) as response:
-            return json.loads(response.read().decode()).get("response", "").strip()
+        return _generate(prompt, url, model, 120)
 
     def is_context_error(error: HTTPError) -> tuple[bool, str]:
         detail = error.read().decode("utf-8", errors="replace").strip()
@@ -114,3 +121,64 @@ def suggest_sql(question: str, database, url: str, model: str) -> str:
         raise RuntimeError(f"Ollama returned HTTP {exc.code}: {detail or exc.reason}") from exc
     except (URLError, TimeoutError, json.JSONDecodeError) as exc:
         raise RuntimeError(f"Could not reach local Ollama at {url}: {exc}") from exc
+
+
+def correct_sql(sql: str, error: str, database, url: str, model: str) -> str:
+    """Suggest a minimal correction for a failed SQL statement; never execute it."""
+    require_ai_resources()
+    schema = "\n".join(f"{table}: {', '.join(columns)}" for table, columns in database.tables.items())
+    prompt = (
+        "You repair one failed MySQL statement for a beginner. Make only the smallest correction needed for the reported error. "
+        "Preserve the exact operation, target table, conditions, values, sort order, and row limit. "
+        "Fix an identifier only when the intended table or column is clear from the schema. "
+        "Never remove or weaken a WHERE condition, invent a column, change a filter value, or change the SQL operation. "
+        "If you cannot safely infer the intended correction, return exactly CLARIFY: followed by one short question. "
+        "Otherwise return exactly one corrected SQL statement, with no Markdown or explanation.\n\n"
+        f"Database: {database.settings.database or '(not selected)'}\n"
+        f"Schema:\n{schema or '(no schema loaded)'}\n\n"
+        f"Failed SQL:\n{sql}\n\nMySQL error:\n{error}\n\nCorrected SQL:"
+    )
+    try:
+        response_text = _generate(prompt, url, model, 180)
+    except HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace").strip()
+        raise RuntimeError(f"Ollama returned HTTP {exc.code}: {detail or exc.reason}") from exc
+    except (URLError, TimeoutError, json.JSONDecodeError) as exc:
+        raise RuntimeError(f"Could not reach local Ollama at {url}: {exc}") from exc
+
+    if not response_text:
+        return "CLARIFY: I couldn't produce a safe correction."
+    clarify = re.search(r"(?im)^\s*CLARIFY:\s*(.+?)(?:\n|$)", response_text)
+    if clarify:
+        return "CLARIFY: " + clarify.group(1).strip()
+    fenced = re.search(r"```(?:mysql|sql)?\s*(.*?)```", response_text, re.IGNORECASE | re.DOTALL)
+    candidate = fenced.group(1) if fenced else response_text
+    start = re.search(
+        r"\b(?:SELECT|WITH|SHOW|DESCRIBE|EXPLAIN|DELETE|UPDATE|INSERT|REPLACE|CREATE|ALTER|DROP|TRUNCATE|RENAME|USE)\b",
+        candidate,
+        re.IGNORECASE,
+    )
+    if not start:
+        return "CLARIFY: I couldn't identify one corrected SQL statement."
+    corrected = candidate[start.start():].strip()
+    if not corrected.endswith(";"):
+        corrected += ";"
+
+    original_safety = inspect_sql(sql)
+    corrected_safety = inspect_sql(corrected)
+    if corrected_safety.multiple_statements or not corrected_safety.verb:
+        return "CLARIFY: The model did not return exactly one SQL statement."
+    known_verbs = {
+        "SELECT", "SHOW", "DESCRIBE", "EXPLAIN", "DELETE", "UPDATE", "INSERT", "REPLACE",
+        "CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME", "USE",
+    }
+    if original_safety.verb in known_verbs:
+        if corrected_safety.verb != original_safety.verb:
+            return "CLARIFY: The suggested SQL changes the type of operation."
+    else:
+        first_word = re.match(r"\s*([A-Za-z]+)", sql)
+        if not first_word or SequenceMatcher(None, first_word.group(1).upper(), corrected_safety.verb).ratio() < 0.7:
+            return "CLARIFY: The suggested SQL may change the type of operation."
+    if corrected_safety.missing_where:
+        return "CLARIFY: The correction would change data without a WHERE condition."
+    return corrected

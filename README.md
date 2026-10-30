@@ -143,7 +143,9 @@ Then ask a question in plain language:
 
 If SQLCLI says the model is missing, connect to the internet and type `:ollama pull`. If AI says it is disabled, type `:ai on`.
 
-**AI only suggests SQL; it does not run the query for you.** Read the suggestion before copying it into SQLCLI. SQLCLI asks you to confirm data-changing commands. Keep a backup before changing important data.
+**`:ask` only suggests SQL; it never runs the query for you.** Read the suggestion before copying it into SQLCLI. SQLCLI asks you to confirm data-changing commands. Keep a backup before changing important data.
+
+When AI is on, it can understand obvious spelling mistakes in `:ask` requests. If a SQL statement returns a syntax, unknown-column, ambiguous-column, or missing-table error, SQLCLI can offer a corrected version. It shows the suggestion first and runs it only if you type `YES`; data-changing SQL still displays a warning.
 
 To help protect your laptop, SQLCLI checks CPU use and free RAM before starting Ollama, downloading the model, and each AI request. It pauses AI when CPU use is 60% or higher or less than 4 GB of RAM is free. Close some programs and try again later. The model uses the CPU and may be slow; these checks don't measure laptop temperature.
 

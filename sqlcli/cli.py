@@ -13,7 +13,7 @@ from prompt_toolkit.styles import Style
 from tabulate import tabulate
 
 from . import __version__
-from .ai import suggest_sql
+from .ai import correct_sql, suggest_sql
 from .completion import SQLCompleter
 from .config import load_settings
 from .connection import Database
@@ -40,6 +40,55 @@ def _safe_csv_cell(value):
     if isinstance(value, str) and value.lstrip(" \t\r\n").startswith(("=", "+", "-", "@")):
         return "'" + value
     return value
+
+
+def _offer_ai_correction(sql, error, database, settings, session, ai_enabled: bool) -> None:
+    """Offer a reviewed SQL repair for common MySQL syntax/name errors."""
+    if not ai_enabled or getattr(error, "errno", None) not in {1052, 1054, 1064, 1146}:
+        return
+    try:
+        ensure_ready(settings)
+        correction = correct_sql(
+            sql, str(error), database, settings.ollama_url, settings.ollama_model
+        )
+    except Exception as correction_error:
+        print(f"AI correction is unavailable: {correction_error}")
+        return
+    if correction.startswith("CLARIFY:"):
+        print("AI could not safely correct that SQL: " + correction.removeprefix("CLARIFY:").strip())
+        return
+
+    print("\nAI correction suggestion (not run yet):")
+    print(correction)
+    safety = inspect_sql(correction)
+    if safety.multiple_statements or safety.missing_where:
+        print("Blocked for safety: the suggested query failed SQLCLI's safety checks and was not run.")
+        return
+    if safety.requires_confirmation:
+        print("Warning: this corrected statement can change or remove database data/schema.")
+    try:
+        answer = session.prompt("Type YES to run this corrected query, or anything else to cancel: ").strip()
+    except KeyboardInterrupt:
+        answer = ""
+    if answer != "YES":
+        print("Correction cancelled. No corrected query was run.")
+        return
+
+    try:
+        headers, rows, count = database.execute(correction)
+        if headers:
+            print(tabulate(rows, headers=headers, tablefmt="rounded_grid", showindex=False))
+            print_formatted_text(HTML(f"\n<ansigray>{len(rows)} row(s)</ansigray>"))
+        else:
+            print(f"Corrected query OK, {count} row(s) affected.")
+            if safety.verb in {"CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME"}:
+                database.refresh_schema()
+                try:
+                    database.refresh_databases()
+                except Exception:
+                    pass
+    except Exception as corrected_error:
+        print(f"The corrected query still failed: {corrected_error}")
 
 
 def print_banner(settings, database, plugin_count: int) -> None:
@@ -318,6 +367,7 @@ def main() -> None:
             except Exception as exc:
                 print(f"SQL error: {exc}")
                 print("Tip: check the table/column spelling and make sure the statement ends with ;")
+                _offer_ai_correction(buffer.strip(), exc, database, settings, session, ai_enabled)
             buffer = ""
     finally:
         database.close()

@@ -68,8 +68,14 @@ def start(settings: Settings) -> str:
     env["OLLAMA_MAX_LOADED_MODELS"] = "1"
     env["OLLAMA_NUM_PARALLEL"] = "1"
     creation_flags = 0
+    startupinfo = None
     if os.name == "nt":
-        creation_flags = subprocess.CREATE_NO_WINDOW | subprocess.DETACHED_PROCESS
+        # :ask may start Ollama automatically. Keep that background service
+        # out of the user's terminal by suppressing its console window.
+        creation_flags = subprocess.CREATE_NO_WINDOW
+        startupinfo = subprocess.STARTUPINFO()
+        startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+        startupinfo.wShowWindow = subprocess.SW_HIDE
     subprocess.Popen(
         [binary, "serve"],
         env=env,
@@ -78,6 +84,7 @@ def start(settings: Settings) -> str:
         stderr=subprocess.DEVNULL,
         close_fds=True,
         creationflags=creation_flags,
+        startupinfo=startupinfo,
     )
 
     for _ in range(30):

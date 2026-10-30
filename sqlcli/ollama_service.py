@@ -12,7 +12,7 @@ from urllib.error import URLError
 from urllib.request import urlopen
 
 from .config import Settings
-from .resource_guard import minimum_available_gb_for_model, require_ai_resources
+from .resource_guard import estimated_model_ram_gb, require_ai_resources
 
 
 def _project_root() -> Path:
@@ -103,8 +103,8 @@ def start(settings: Settings) -> str:
 
 def ensure_ready(settings: Settings) -> None:
     # Check before starting a service or allowing a model request.
-    cpu_percent, available_gb = require_ai_resources(minimum_available_gb_for_model(settings.ollama_model))
-    print(f"AI safety check passed: CPU {cpu_percent:.0f}%, {available_gb:.1f} GB RAM available.")
+    cpu_percent, available_gb = require_ai_resources(estimated_model_ram_gb(settings.ollama_model))
+    print(f"AI safety check passed: CPU {cpu_percent:.0f}%, {available_gb:.1f} GB RAM available; projected use is below 80%.")
     start(settings)
     current, models = _service_info(settings.ollama_url)
     if not current:

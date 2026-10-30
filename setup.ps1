@@ -96,24 +96,67 @@ function Get-ResourceSnapshot {
         if ($loads.Count -eq 0) { return $null }
         $os = Get-CimInstance -ClassName Win32_OperatingSystem -ErrorAction Stop
         $freeGb = $os.FreePhysicalMemory / 1MB
+        $totalGb = $os.TotalVisibleMemorySize / 1MB
+        $cpuCores = [int](($processors | Measure-Object -Property NumberOfCores -Sum).Sum)
         return [pscustomobject]@{
             CpuPercent = [math]::Round((($loads | Measure-Object -Average).Average), 0)
             AvailableGb = $freeGb
+            TotalGb = $totalGb
+            CpuCores = [math]::Max(1, $cpuCores)
         }
     } catch {
         return $null
     }
 }
 
-function Test-AiResourceBudget([string]$Stage) {
+function Get-RecommendedModel {
     $snapshot = Get-ResourceSnapshot
-    if ($null -eq $snapshot) {
+    if ($null -eq $snapshot -or $snapshot.CpuPercent -ge 80) { return $null }
+    $candidates = if ($snapshot.CpuCores -le 2) {
+        @(@{ Name = 'qwen3.5:0.8b'; RamGb = 2.0 })
+    } else {
+        @(
+            @{ Name = 'qwen3.5:4b'; RamGb = 4.5 },
+            @{ Name = 'qwen3.5:2b'; RamGb = 3.6 },
+            @{ Name = 'qwen3.5:0.8b'; RamGb = 2.0 }
+        )
+    }
+    foreach ($candidate in $candidates) {
+        $projected = 100 * ($snapshot.TotalGb - $snapshot.AvailableGb + $candidate.RamGb) / $snapshot.TotalGb
+        if ($projected -lt 80) { return $candidate.Name }
+    }
+    return $null
+}
+
+function Get-ModelMemoryEstimate([string]$Model) {
+    switch -Regex ($Model.ToLowerInvariant()) {
+        '^qwen3\.5:0\.8b$' { return 2.0 }
+        '^qwen3\.5:2b$' { return 3.6 }
+        '^qwen3\.5:4b$' { return 4.5 }
+        default { return 5.0 }
+    }
+}
+
+function Get-ModelDownloadSize([string]$Model) {
+    switch -Regex ($Model.ToLowerInvariant()) {
+        '^qwen3\.5:0\.8b$' { return 'about 1.2-1.3 GB' }
+        '^qwen3\.5:2b$' { return 'about 2.7-3.1 GB' }
+        '^qwen3\.5:4b$' { return 'about 3.3-4.0 GB' }
+        default { return 'size depends on the selected model' }
+    }
+}
+
+function Test-AiResourceBudget([string]$Stage, [string]$Model = '') {
+    $snapshot = Get-ResourceSnapshot
+    if ($null -eq $snapshot -or $snapshot.TotalGb -le 0) {
         Write-Host "Skipping optional Ollama/model setup: Windows could not safely read CPU and memory usage before $Stage." -ForegroundColor Yellow
         return $false
     }
-    Write-Host ("Resource check before {0}: CPU {1}%, free RAM {2:N1} GB." -f $Stage, $snapshot.CpuPercent, $snapshot.AvailableGb)
-    if ($snapshot.CpuPercent -ge 60 -or $snapshot.AvailableGb -lt 4.0) {
-        Write-Host ("Skipping optional Ollama/model setup to protect your laptop. It needs CPU below 60% and at least 4.0 GB free RAM; current values are CPU {0}% and {1} GB free. Run setup.bat again when the laptop is less busy." -f $snapshot.CpuPercent, $snapshot.AvailableGb) -ForegroundColor Yellow
+    $projectedPercent = 100 * ($snapshot.TotalGb - $snapshot.AvailableGb) / $snapshot.TotalGb
+    if ($Model) { $projectedPercent += 100 * (Get-ModelMemoryEstimate $Model) / $snapshot.TotalGb }
+    Write-Host ("Resource check before {0}: CPU {1}%, RAM now {2:N0}%, projected {3:N0}%{4}." -f $Stage, $snapshot.CpuPercent, (100 * ($snapshot.TotalGb - $snapshot.AvailableGb) / $snapshot.TotalGb), $projectedPercent, $(if ($Model) { " with $Model loaded" } else { '' }))
+    if ($snapshot.CpuPercent -ge 80 -or $projectedPercent -ge 80) {
+        Write-Host ("Skipping optional Ollama/model setup to protect your laptop. SQLCLI keeps CPU and projected RAM below 80%; current CPU is {0}% and projected RAM would be {1:N0}%. Close other programs or choose a smaller model, then rerun setup.bat." -f $snapshot.CpuPercent, $projectedPercent) -ForegroundColor Yellow
         return $false
     }
     return $true
@@ -183,8 +226,19 @@ try {
     }
     $ModelName = Get-EnvFileValue $EnvPath 'SQLCLI_OLLAMA_MODEL' $ModelName
 
+    $RecommendedModel = Get-RecommendedModel
+    if ($RecommendedModel) {
+        Write-Host "Based on this computer's CPU cores and current free RAM, SQLCLI recommends $RecommendedModel." -ForegroundColor Cyan
+        if ($ModelName -ne $RecommendedModel -and (Ask-YesNo "Use the safer recommended model instead of $ModelName?" $true)) {
+            $ModelName = $RecommendedModel
+            Set-EnvFileValue $EnvPath 'SQLCLI_OLLAMA_MODEL' $ModelName
+        }
+    } else {
+        Write-Host 'No local AI model currently fits below the 80% CPU/RAM safety limit. SQLCLI and XAMPP setup can continue; AI setup will be skipped.' -ForegroundColor Yellow
+    }
+
     $OllamaExe = Find-Ollama
-    $AiSetupAllowed = Test-AiResourceBudget 'optional Ollama setup'
+    $AiSetupAllowed = [bool]$RecommendedModel -and (Test-AiResourceBudget 'optional Ollama setup')
     if ($AiSetupAllowed) {
         if (-not $OllamaExe) {
             if (Ask-YesNo 'Ollama was not found. Download and install it into this project folder?' $true) {
@@ -237,8 +291,8 @@ try {
                     $tags = Invoke-RestMethod 'http://localhost:11434/api/tags' -TimeoutSec 4
                     $modelFound = [bool]($tags.models | Where-Object { $_.name -eq $ModelName })
                 } catch { }
-                if (-not $modelFound -and (Ask-YesNo "Download the local SQL assistant model $ModelName? (about 3.3-4.0 GB)" $true)) {
-                    if (Test-AiResourceBudget "downloading $ModelName") {
+                if (-not $modelFound -and (Ask-YesNo "Download the local SQL assistant model $ModelName ($(Get-ModelDownloadSize $ModelName))?" $true)) {
+                    if (Test-AiResourceBudget "downloading $ModelName" $ModelName) {
                         Write-Host "Downloading $ModelName. Keep this window open until it finishes..."
                         & $OllamaExe pull $ModelName
                         if ($LASTEXITCODE -ne 0) { throw "Ollama could not download $ModelName." }

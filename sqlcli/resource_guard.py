@@ -7,15 +7,37 @@ import os
 import time
 from ctypes import wintypes
 
-MAX_CPU_PERCENT = 60.0
+MAX_CPU_PERCENT = 80.0
+MAX_MEMORY_PERCENT = 80.0
 MIN_AVAILABLE_GB = 4.0
 
 
-def minimum_available_gb_for_model(model: str) -> float:
-    """Keep additional RAM free for the larger local model variants."""
-    if model.lower().startswith("qwen3.5:4b"):
-        return 8.0
-    return MIN_AVAILABLE_GB
+def estimated_model_ram_gb(model: str) -> float:
+    """Conservative working-memory allowance, including Ollama overhead."""
+    normalized = model.lower()
+    if normalized.startswith("qwen3.5:0.8b"):
+        return 2.0
+    if normalized.startswith("qwen3.5:2b"):
+        return 3.6
+    if normalized.startswith("qwen3.5:4b"):
+        return 4.5
+    if normalized.startswith("qwen3.5:9b"):
+        return 10.0
+    if normalized.startswith("qwen3.5:27b"):
+        return 22.0
+    if normalized.startswith("qwen3.5:35b"):
+        return 28.0
+    if normalized.startswith("qwen3.5:122b"):
+        return 90.0
+    if normalized.startswith("qwen3:0.6b"):
+        return 2.0
+    if normalized.startswith("qwen3:1.7b"):
+        return 3.0
+    if normalized.startswith("qwen3:4b"):
+        return 4.5
+    if normalized.startswith("qwen3:8b"):
+        return 7.0
+    return 5.0
 
 
 class _FileTime(ctypes.Structure):
@@ -67,25 +89,59 @@ def measure_resources(sample_seconds: float = 0.4) -> tuple[float, float]:
     return cpu_percent, available_gb
 
 
-def require_ai_resources(min_available_gb: float = MIN_AVAILABLE_GB) -> tuple[float, float]:
-    """Pause local model work when CPU is busy or free RAM is low."""
+def total_physical_memory_gb() -> float:
+    """Return installed physical RAM in GB."""
+    if os.name != "nt":
+        raise RuntimeError("SQLCLI's local AI resource guard currently supports Windows measurements only.")
+    memory = _MemoryStatusEx()
+    memory.length = ctypes.sizeof(memory)
+    if not ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(memory)):
+        raise OSError("Windows could not read total physical memory.")
+    return memory.total_phys / (1024 ** 3)
+
+
+def require_ai_resources(model_ram_gb: float = 0.0) -> tuple[float, float]:
+    """Pause local model work when CPU or projected RAM use reaches 80%."""
     try:
         cpu_percent, available_gb = measure_resources()
+        total_gb = total_physical_memory_gb()
     except (OSError, RuntimeError) as exc:
         raise RuntimeError(f"AI paused because SQLCLI could not safely check CPU and memory: {exc}") from exc
-    return check_ai_resources(cpu_percent, available_gb, min_available_gb)
+    return check_ai_resources(
+        cpu_percent,
+        available_gb,
+        total_memory_gb=total_gb,
+        model_ram_gb=model_ram_gb,
+    )
 
 
 def check_ai_resources(
     cpu_percent: float,
     available_gb: float,
     min_available_gb: float = MIN_AVAILABLE_GB,
+    *,
+    total_memory_gb: float | None = None,
+    model_ram_gb: float = 0.0,
 ) -> tuple[float, float]:
-    """Validate a previously measured CPU/RAM snapshot."""
-    if cpu_percent >= MAX_CPU_PERCENT or available_gb < min_available_gb:
+    """Validate a measured snapshot, including the model's projected RAM use."""
+    projected_memory_percent = None
+    if total_memory_gb and total_memory_gb > 0:
+        projected_used_gb = total_memory_gb - available_gb + max(0.0, model_ram_gb)
+        projected_memory_percent = 100.0 * projected_used_gb / total_memory_gb
+    memory_is_high = (
+        projected_memory_percent >= MAX_MEMORY_PERCENT
+        if projected_memory_percent is not None
+        else available_gb < min_available_gb
+    )
+    if cpu_percent >= MAX_CPU_PERCENT or memory_is_high:
+        ram_detail = (
+            f"projected RAM use {projected_memory_percent:.0f}% after loading the model"
+            if projected_memory_percent is not None
+            else f"free RAM {available_gb:.1f} GB"
+        )
         raise RuntimeError(
-            f"AI paused to protect your laptop (CPU {cpu_percent:.0f}%, free RAM {available_gb:.1f} GB). "
-            f"Close other apps and try again when CPU is below {MAX_CPU_PERCENT:.0f}% and at least "
-            f"{min_available_gb:.0f} GB RAM is free. SQLCLI is still open."
+            f"AI paused to protect your laptop (CPU {cpu_percent:.0f}%, {ram_detail}). "
+            f"Close other apps and try again when CPU and projected RAM use are below "
+            f"{MAX_CPU_PERCENT:.0f}%. SQLCLI is still open."
         )
     return cpu_percent, available_gb

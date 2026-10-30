@@ -9,17 +9,20 @@ from difflib import SequenceMatcher
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .resource_guard import minimum_available_gb_for_model, require_ai_resources
+from .resource_guard import estimated_model_ram_gb, require_ai_resources
 from .sql_safety import inspect_sql
 
 
 def _generate(prompt: str, url: str, model: str, max_tokens: int) -> str:
     """Call the local model with conservative CPU-only settings."""
-    threads = max(1, min(4, (os.cpu_count() or 2) // 4))
+    # Keep one logical core free where possible and never let one request spawn
+    # more than two inference threads on a CPU-only laptop.
+    threads = max(1, min(2, ((os.cpu_count() or 2) + 1) // 2))
     payload = json.dumps({
         "model": model,
         "prompt": prompt,
         "stream": False,
+        "think": False,
         "keep_alive": 0,
         "options": {
             "num_ctx": 4096,
@@ -31,10 +34,11 @@ def _generate(prompt: str, url: str, model: str, max_tokens: int) -> str:
     }).encode()
     request = Request(f"{url}/api/generate", data=payload, headers={"Content-Type": "application/json"})
     with urlopen(request, timeout=180) as response:
-        return json.loads(response.read().decode()).get("response", "").strip()
+        result = json.loads(response.read().decode())
+        return str(result.get("response") or "").strip()
 
 def suggest_sql(question: str, database, url: str, model: str) -> str:
-    require_ai_resources(minimum_available_gb_for_model(model))
+    require_ai_resources(estimated_model_ram_gb(model))
     schema = "\n".join(f"{table}: {', '.join(columns)}" for table, columns in database.tables.items())
     instructions = (
         "You are a careful MySQL query writer helping a beginner. "
@@ -92,7 +96,10 @@ def suggest_sql(question: str, database, url: str, model: str) -> str:
                     "Try asking about fewer tables or columns. Your SQLCLI session is still open."
                 ) from retry_error
         if not response_text:
-            raise RuntimeError("The AI returned an empty response. Try :ai reset and ask again.")
+            raise RuntimeError(
+                "Ollama returned no answer text. SQLCLI requested answer-only mode to avoid an empty thinking response. "
+                "Check :ollama status, then try a shorter :ask request. SQLCLI is still open."
+            )
             # Small local models sometimes ignore the SQL-only instruction.
             # Remove fences/prose and show just the first SQL statement.
         clarify = re.search(r"(?im)^\s*CLARIFY:\s*(.+?)(?:\n|$)", response_text)
@@ -125,7 +132,7 @@ def suggest_sql(question: str, database, url: str, model: str) -> str:
 
 def correct_sql(sql: str, error: str, database, url: str, model: str) -> str:
     """Suggest a minimal correction for a failed SQL statement; never execute it."""
-    require_ai_resources(minimum_available_gb_for_model(model))
+    require_ai_resources(estimated_model_ram_gb(model))
     schema = "\n".join(f"{table}: {', '.join(columns)}" for table, columns in database.tables.items())
     prompt = (
         "You repair one failed MySQL statement for a beginner. Make only the smallest correction needed for the reported error. "

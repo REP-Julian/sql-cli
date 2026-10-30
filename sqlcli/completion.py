@@ -31,6 +31,19 @@ CLAUSE_KEYWORDS = {
 
 
 class SQLCompleter(Completer):
+    COMMANDS = (
+        "connect", "use", "databases", "tables", "describe", "columns", "sample", "count",
+        "export", "refresh", "ai", "ollama", "ask", "plugins", "help", "quit", "exit",
+    )
+    COMMAND_ARGUMENTS = {
+        "describe": (),
+        "columns": (),
+        "sample": (),
+        "count": (),
+        "ai": ("on", "off", "reset"),
+        "ollama": ("start", "status", "pull"),
+    }
+
     def __init__(self, database, plugins):
         self.database = database
         self.plugins = plugins
@@ -55,8 +68,45 @@ class SQLCompleter(Completer):
                 aliases[alias.lower()] = table
         return aliases
 
+    @staticmethod
+    def _matching(items: list[str], word: str, start_position: int):
+        """Yield unique case-insensitive prefix matches in their original form."""
+        seen = set()
+        for item in items:
+            if item and item.lower().startswith(word.lower()) and item.lower() not in seen:
+                seen.add(item.lower())
+                yield Completion(item, start_position=start_position)
+
+    def _command_completions(self, text: str):
+        """Complete SQLCLI commands and their simple local arguments."""
+        command_match = re.search(r"(?:^|\s):([\w-]*)$", text)
+        if command_match:
+            word = command_match.group(1)
+            names = list(self.COMMANDS) + list(self.plugins.commands)
+            names = list(dict.fromkeys(names))
+            return self._matching(names, word, -len(word))
+
+        argument_match = re.search(r"(?:^|\s):([\w-]+)\s+([^\s]*)$", text)
+        if not argument_match:
+            return None
+
+        command, word = argument_match.groups()
+        command = command.lower()
+        items = list(self.COMMAND_ARGUMENTS.get(command, ()))
+        if command in {"describe", "columns", "sample", "count"}:
+            items.extend(self.database.tables)
+        items.extend(self.plugins.completions(text))
+        return self._matching(items, word, -len(word))
+
     def get_completions(self, document, complete_event):
-        text = self._statement(document.text_before_cursor)
+        before_cursor = document.text_before_cursor
+        if before_cursor.lstrip().startswith(":"):
+            command_items = self._command_completions(before_cursor)
+            if command_items is not None:
+                yield from command_items
+                return
+
+        text = self._statement(before_cursor)
         raw_word = document.get_word_before_cursor(WORD=True)
         word = raw_word.strip("`")
         aliases = self._tables_in_scope(text)
@@ -104,10 +154,8 @@ class SQLCompleter(Completer):
                 items.extend(FUNCTIONS)
                 if not scoped_tables and latest_clause not in CLAUSE_KEYWORDS:
                     items.extend(self.database.tables.keys())
-                items.extend(self.plugins.completions(text))
 
-        seen = set()
-        for item in items:
-            if item and item.lower().startswith(word.lower()) and item.lower() not in seen:
-                seen.add(item.lower())
-                yield Completion(item, start_position=start_position)
+        # Plugin callbacks receive the complete text before the cursor and are
+        # consulted in every context, including table names and alias columns.
+        items.extend(self.plugins.completions(before_cursor))
+        yield from self._matching(items, word, start_position)

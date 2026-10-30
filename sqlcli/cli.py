@@ -240,7 +240,14 @@ def main() -> None:
                             print(proposal)
                             print("Review it, then copy and paste it to run. Changes require confirmation.\n")
                     elif command == "plugins":
-                        print(", ".join(plugins.names) if plugins.names else "No plugins loaded. Add Python plugins under ./plugins.")
+                        if plugins.names:
+                            print("Loaded plugins: " + ", ".join(plugins.names))
+                            if plugins.commands:
+                                print("Plugin commands: " + ", ".join(f":{name}" for name in plugins.commands))
+                            else:
+                                print("These plugins add no commands; press Tab while typing SQL to try their suggestions.")
+                        else:
+                            print("No plugins loaded. Add trusted Python plugins under ./plugins.")
                     elif command in plugins.commands:
                         plugins.commands[command](argument, database)
                     else:

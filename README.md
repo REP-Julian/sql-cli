@@ -23,7 +23,7 @@ On this GitHub page, choose **Code**, then **Download ZIP**. Open the downloaded
 
 Open the extracted folder and double-click **`setup.bat`**. Follow the on-screen questions. Setup installs the Python packages SQLCLI needs and creates a separate environment for this project.
 
-If Python or XAMPP is missing, setup can open its official download page. Install the missing program, then run `setup.bat` again. Ollama and its AI model are optional; the model download is about 1.9 GB.
+If Python or XAMPP is missing, setup can open its official download page. Install the missing program, then run `setup.bat` again. Ollama and its AI model are optional; the Qwen3.5 4B model download is about 3.3–4.0 GB.
 
 The first setup needs internet to download Python packages. After setup, you can use SQLCLI with XAMPP offline. The AI model also needs internet to download, but can be used offline after it is installed.
 
@@ -121,7 +121,7 @@ The CSV is saved in the folder where SQLCLI is running. SQLCLI won't overwrite a
 
 ## Optional AI helper
 
-The AI helper is optional. It uses Ollama on your own computer. The model download needs internet and about 1.9 GB of disk space; after downloading it, you can ask for SQL without internet.
+The AI helper is optional. It uses Ollama on your own computer. The Qwen3.5 4B model download needs internet and about 3.3–4.0 GB of disk space; after downloading it, you can ask for SQL without internet.
 
 Check that Ollama is ready:
 
@@ -147,7 +147,7 @@ If SQLCLI says the model is missing, connect to the internet and type `:ollama p
 
 When AI is on, it can understand obvious spelling mistakes in `:ask` requests. If a SQL statement returns a syntax, unknown-column, ambiguous-column, or missing-table error, SQLCLI can offer a corrected version. It shows the suggestion first and runs it only if you type `YES`; data-changing SQL still displays a warning.
 
-To help protect your laptop, SQLCLI checks CPU use and free RAM before starting Ollama, downloading the model, and each AI request. It pauses AI when CPU use is 60% or higher or less than 4 GB of RAM is free. Close some programs and try again later. The model uses the CPU and may be slow; these checks don't measure laptop temperature.
+To help protect your laptop, SQLCLI checks CPU use and free RAM before starting Ollama, downloading the model, and each AI request. It pauses AI when CPU use is 60% or higher, or free RAM is below 8 GB before a Qwen3.5 4B request (4 GB is reserved for the model and about 4 GB remains for Windows). Close some programs and try again later. The model uses the CPU and may be slow; these checks don't measure laptop temperature.
 
 ## If something goes wrong
 
@@ -156,7 +156,7 @@ To help protect your laptop, SQLCLI checks CPU use and free RAM before starting 
 - **“Table not found”** — make sure you selected the right database, then type `:tables` and check the spelling.
 - **“Access denied”** — check the MySQL user name and password in `.env` inside the SQLCLI folder. Many XAMPP setups use user `root` and a blank password, but yours may differ.
 - **“Ollama unavailable”** — type `:ollama start`, then `:ollama status`.
-- **“AI paused to protect your laptop”** — close other programs and try again when CPU use is lower and at least 4 GB of RAM is free.
+- **“AI paused to protect your laptop”** — close other programs and try again when CPU use is lower and at least 8 GB of RAM is free for the Qwen3.5 4B model.
 - **Python is not recognized** — install Python 3.10 or newer, select **Add Python to PATH**, and run `setup.bat` again.
 
 ## Your settings and files

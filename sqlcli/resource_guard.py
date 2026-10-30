@@ -11,6 +11,13 @@ MAX_CPU_PERCENT = 60.0
 MIN_AVAILABLE_GB = 4.0
 
 
+def minimum_available_gb_for_model(model: str) -> float:
+    """Keep additional RAM free for the larger local model variants."""
+    if model.lower().startswith("qwen3.5:4b"):
+        return 8.0
+    return MIN_AVAILABLE_GB
+
+
 class _FileTime(ctypes.Structure):
     _fields_ = [("low", wintypes.DWORD), ("high", wintypes.DWORD)]
 
@@ -60,21 +67,25 @@ def measure_resources(sample_seconds: float = 0.4) -> tuple[float, float]:
     return cpu_percent, available_gb
 
 
-def require_ai_resources() -> tuple[float, float]:
+def require_ai_resources(min_available_gb: float = MIN_AVAILABLE_GB) -> tuple[float, float]:
     """Pause local model work when CPU is busy or free RAM is low."""
     try:
         cpu_percent, available_gb = measure_resources()
     except (OSError, RuntimeError) as exc:
         raise RuntimeError(f"AI paused because SQLCLI could not safely check CPU and memory: {exc}") from exc
-    return check_ai_resources(cpu_percent, available_gb)
+    return check_ai_resources(cpu_percent, available_gb, min_available_gb)
 
 
-def check_ai_resources(cpu_percent: float, available_gb: float) -> tuple[float, float]:
+def check_ai_resources(
+    cpu_percent: float,
+    available_gb: float,
+    min_available_gb: float = MIN_AVAILABLE_GB,
+) -> tuple[float, float]:
     """Validate a previously measured CPU/RAM snapshot."""
-    if cpu_percent >= MAX_CPU_PERCENT or available_gb < MIN_AVAILABLE_GB:
+    if cpu_percent >= MAX_CPU_PERCENT or available_gb < min_available_gb:
         raise RuntimeError(
             f"AI paused to protect your laptop (CPU {cpu_percent:.0f}%, free RAM {available_gb:.1f} GB). "
             f"Close other apps and try again when CPU is below {MAX_CPU_PERCENT:.0f}% and at least "
-            f"{MIN_AVAILABLE_GB:.0f} GB RAM is free. SQLCLI is still open."
+            f"{min_available_gb:.0f} GB RAM is free. SQLCLI is still open."
         )
     return cpu_percent, available_gb

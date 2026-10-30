@@ -1,7 +1,7 @@
 $ErrorActionPreference = 'Stop'
 $ProgressPreference = 'SilentlyContinue'
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
-$ModelName = 'qwen2.5-coder:3b'
+$ModelName = 'qwen3.5:4b'
 $XamppUrl = 'https://www.apachefriends.org/download.html'
 $OllamaInstallUrl = 'https://ollama.com/install.ps1'
 
@@ -237,7 +237,7 @@ try {
                     $tags = Invoke-RestMethod 'http://localhost:11434/api/tags' -TimeoutSec 4
                     $modelFound = [bool]($tags.models | Where-Object { $_.name -eq $ModelName })
                 } catch { }
-                if (-not $modelFound -and (Ask-YesNo "Download the local SQL assistant model $ModelName? (about 1.9 GB for the default model)" $true)) {
+                if (-not $modelFound -and (Ask-YesNo "Download the local SQL assistant model $ModelName? (about 3.3-4.0 GB)" $true)) {
                     if (Test-AiResourceBudget "downloading $ModelName") {
                         Write-Host "Downloading $ModelName. Keep this window open until it finishes..."
                         & $OllamaExe pull $ModelName

@@ -18,7 +18,7 @@ class Settings:
     database: str | None = None
     ai_enabled: bool = False
     ollama_url: str = "http://localhost:11434"
-    ollama_model: str = "qwen2.5-coder:3b"
+    ollama_model: str = "qwen3.5:4b"
 
 
 def load_settings() -> Settings:
@@ -31,5 +31,5 @@ def load_settings() -> Settings:
         database=os.getenv("MYSQL_DATABASE") or None,
         ai_enabled=os.getenv("SQLCLI_AI_ENABLED", "false").lower() in {"1", "true", "yes", "on"},
         ollama_url=os.getenv("SQLCLI_OLLAMA_URL", "http://localhost:11434").rstrip("/"),
-        ollama_model=os.getenv("SQLCLI_OLLAMA_MODEL", "qwen2.5-coder:3b"),
+        ollama_model=os.getenv("SQLCLI_OLLAMA_MODEL", "qwen3.5:4b"),
     )

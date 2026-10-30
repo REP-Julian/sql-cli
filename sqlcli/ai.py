@@ -9,7 +9,7 @@ from difflib import SequenceMatcher
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .resource_guard import require_ai_resources
+from .resource_guard import minimum_available_gb_for_model, require_ai_resources
 from .sql_safety import inspect_sql
 
 
@@ -34,7 +34,7 @@ def _generate(prompt: str, url: str, model: str, max_tokens: int) -> str:
         return json.loads(response.read().decode()).get("response", "").strip()
 
 def suggest_sql(question: str, database, url: str, model: str) -> str:
-    require_ai_resources()
+    require_ai_resources(minimum_available_gb_for_model(model))
     schema = "\n".join(f"{table}: {', '.join(columns)}" for table, columns in database.tables.items())
     instructions = (
         "You are a careful MySQL query writer helping a beginner. "
@@ -125,7 +125,7 @@ def suggest_sql(question: str, database, url: str, model: str) -> str:
 
 def correct_sql(sql: str, error: str, database, url: str, model: str) -> str:
     """Suggest a minimal correction for a failed SQL statement; never execute it."""
-    require_ai_resources()
+    require_ai_resources(minimum_available_gb_for_model(model))
     schema = "\n".join(f"{table}: {', '.join(columns)}" for table, columns in database.tables.items())
     prompt = (
         "You repair one failed MySQL statement for a beginner. Make only the smallest correction needed for the reported error. "

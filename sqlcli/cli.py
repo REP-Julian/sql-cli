@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import csv
 import re
+import time
 from pathlib import Path
 
 from prompt_toolkit import PromptSession, print_formatted_text
@@ -25,6 +26,7 @@ from .ollama_service import (
     status as ollama_status,
 )
 from .plugins import PluginRegistry, load_plugins
+from .queries import get_query, load_queries, save_query
 from .sql_safety import inspect_sql
 
 STYLE = Style.from_dict({
@@ -114,6 +116,10 @@ def print_help() -> None:
                         Save a read-only SELECT result as a new CSV file
   :refresh              Refresh database, table, and column suggestions
   :history [n]          Show recent commands (default: 20, max: 100)
+  :find <text>          Find tables and columns by name
+  :save <name> <SQL>    Save a reusable SQL statement
+  :saved                List saved SQL statements
+  :run <name>           Run a saved statement through normal safety checks
   :ai on|off|reset      Enable, disable, or reset the local AI model
   :ollama start         Start Ollama and connect the configured model
   :ollama status        Check Ollama and model connection
@@ -143,6 +149,84 @@ def print_history(history, argument: str = "") -> None:
     start = len(entries) - len(recent) + 1
     for index, entry in enumerate(recent, start):
         print(f"{index:>4}  {' '.join(entry.splitlines())}")
+
+
+def find_schema(database, term: str) -> None:
+    """Find matching tables and columns in the loaded schema."""
+    needle = term.strip().strip("\"").lower()
+    if not needle:
+        raise RuntimeError("Usage: :find <table or column text>")
+    matches = []
+    for table, columns in database.tables.items():
+        if needle in table.lower():
+            matches.append(("table", table, ""))
+        for column in columns:
+            if needle in column.lower():
+                matches.append(("column", table, column))
+    if not matches:
+        print(f"No table or column names contain '{needle}'.")
+        return
+    print(tabulate(matches, headers=["Type", "Table", "Column"], tablefmt="rounded_grid"))
+
+
+def print_rows_paged(session, headers, rows, page_size: int = 20) -> None:
+    """Display query results in small pages so large results stay navigable."""
+    rows = rows or []
+    if not rows:
+        print(tabulate([], headers=headers, tablefmt="rounded_grid"))
+        print("\n0 row(s)")
+        return
+    for start in range(0, len(rows), page_size):
+        page = rows[start:start + page_size]
+        print(tabulate(page, headers=headers, tablefmt="rounded_grid", showindex=False))
+        print(f"\nRows {start + 1}-{start + len(page)} of {len(rows)}")
+        if start + page_size < len(rows):
+            try:
+                answer = session.prompt("Enter for next page, q to stop: ").strip().lower()
+            except KeyboardInterrupt:
+                print("\nPaging stopped.")
+                return
+            if answer == "q":
+                return
+
+
+def execute_statement(sql, database, settings, session, ai_enabled: bool) -> None:
+    """Apply safety checks, run one statement, and report its elapsed time."""
+    safety = inspect_sql(sql)
+    if safety.multiple_statements:
+        print("SQLCLI runs one statement at a time. Split this into separate commands; no SQL was run.")
+        return
+    if safety.missing_where:
+        print("Blocked for safety: UPDATE and DELETE need a WHERE condition. No data was changed.")
+        return
+    if safety.requires_confirmation:
+        print("Warning: this statement can change or remove database data/schema.")
+        try:
+            confirmation = session.prompt("Type YES to run it, or anything else to cancel: ").strip()
+        except KeyboardInterrupt:
+            confirmation = ""
+        if confirmation != "YES":
+            print("Cancelled. No changes were made.")
+            return
+    started = time.perf_counter()
+    try:
+        headers, rows, count = database.execute(sql)
+        elapsed = time.perf_counter() - started
+        if headers:
+            print_rows_paged(session, headers, rows)
+            print_formatted_text(HTML(f"\n<ansigray>{len(rows or [])} row(s) in {elapsed:.3f}s</ansigray>"))
+        else:
+            print(f"Query OK, {count} row(s) affected in {elapsed:.3f}s.")
+            if safety.verb in {"CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME"}:
+                database.refresh_schema()
+                try:
+                    database.refresh_databases()
+                except Exception:
+                    pass
+    except Exception as exc:
+        print(f"SQL error: {exc}")
+        print("Tip: check the table/column spelling and make sure the statement ends with ;")
+        _offer_ai_correction(sql, exc, database, settings, session, ai_enabled)
 
 
 def main() -> None:
@@ -277,6 +361,24 @@ def main() -> None:
                         )
                     elif command == "history":
                         print_history(session.history, argument.strip())
+                    elif command == "find":
+                        find_schema(database, argument)
+                    elif command == "save":
+                        parts = argument.strip().split(maxsplit=1)
+                        if len(parts) != 2:
+                            print("Usage: :save <name> <SQL statement>")
+                        else:
+                            save_query(parts[0], parts[1])
+                            print(f"Saved query '{parts[0]}'.")
+                    elif command == "saved":
+                        queries = load_queries()
+                        print("\n".join(f"{name}: {sql}" for name, sql in queries.items()) or "No saved queries.")
+                    elif command == "run":
+                        name = argument.strip()
+                        if not name:
+                            print("Usage: :run <name>")
+                        else:
+                            execute_statement(get_query(name), database, settings, session, ai_enabled)
                     elif command == "ai":
                         mode = argument.strip().lower()
                         if mode == "reset":
@@ -353,42 +455,7 @@ def main() -> None:
                         "Example: <b>USE your_database_name;</b> Keep typing, or press Ctrl+C to cancel."
                     ))
                 continue
-            try:
-                safety = inspect_sql(buffer.strip())
-                if safety.multiple_statements:
-                    print("SQLCLI runs one statement at a time. Split this into separate commands; no SQL was run.")
-                    buffer = ""
-                    continue
-                if safety.missing_where:
-                    print("Blocked for safety: UPDATE and DELETE need a WHERE condition. No data was changed.")
-                    buffer = ""
-                    continue
-                if safety.requires_confirmation:
-                    print("Warning: this statement can change or remove database data/schema.")
-                    try:
-                        confirmation = session.prompt("Type YES to run it, or anything else to cancel: ").strip()
-                    except KeyboardInterrupt:
-                        confirmation = ""
-                    if confirmation != "YES":
-                        print("Cancelled. No changes were made.")
-                        buffer = ""
-                        continue
-                headers, rows, count = database.execute(buffer.strip())
-                if headers:
-                    print(tabulate(rows, headers=headers, tablefmt="rounded_grid", showindex=False))
-                    print_formatted_text(HTML(f"\n<ansigray>{len(rows)} row(s)</ansigray>"))
-                else:
-                    print(f"Query OK, {count} row(s) affected.")
-                    if safety.verb in {"CREATE", "ALTER", "DROP", "TRUNCATE", "RENAME"}:
-                        database.refresh_schema()
-                        try:
-                            database.refresh_databases()
-                        except Exception:
-                            pass  # Keep command completion working with restricted database visibility.
-            except Exception as exc:
-                print(f"SQL error: {exc}")
-                print("Tip: check the table/column spelling and make sure the statement ends with ;")
-                _offer_ai_correction(buffer.strip(), exc, database, settings, session, ai_enabled)
+            execute_statement(buffer.strip(), database, settings, session, ai_enabled)
             buffer = ""
     finally:
         database.close()

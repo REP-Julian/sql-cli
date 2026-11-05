@@ -130,6 +130,23 @@ def suggest_sql(question: str, database, url: str, model: str) -> str:
         raise RuntimeError(f"Could not reach local Ollama at {url}: {exc}") from exc
 
 
+def _write_scope(sql: str, verb: str) -> tuple[str, str] | None:
+    """Return a normalized write target and predicate for correction safety."""
+    if verb == "UPDATE":
+        target = re.search(r"\bUPDATE\s+(?:IGNORE\s+)?([`\w$.]+)", sql, re.IGNORECASE)
+    elif verb == "DELETE":
+        target = re.search(r"\bDELETE\s+(?:[\w`,.]+\s+)?FROM\s+([`\w$.]+)", sql, re.IGNORECASE)
+    else:
+        return None
+    if not target:
+        return None
+    where = re.search(r"\bWHERE\b(.*?)(?=\b(?:ORDER\s+BY|LIMIT|RETURNING)\b|;|$)", sql, re.IGNORECASE | re.DOTALL)
+    if not where:
+        return target.group(1).replace("`", "").lower(), ""
+    predicate = re.sub(r"\s+", "", where.group(1).replace("`", "")).lower()
+    return target.group(1).replace("`", "").lower(), predicate
+
+
 def correct_sql(sql: str, error: str, database, url: str, model: str) -> str:
     """Suggest a minimal correction for a failed SQL statement; never execute it."""
     require_ai_resources(estimated_model_ram_gb(model))
@@ -188,4 +205,10 @@ def correct_sql(sql: str, error: str, database, url: str, model: str) -> str:
             return "CLARIFY: The suggested SQL may change the type of operation."
     if corrected_safety.missing_where:
         return "CLARIFY: The correction would change data without a WHERE condition."
+    if original_safety.verb in {"UPDATE", "DELETE"}:
+        original_scope = _write_scope(sql, original_safety.verb)
+        corrected_scope = _write_scope(corrected, corrected_safety.verb)
+        if not original_scope or corrected_scope != original_scope:
+            return "CLARIFY: The correction changes the target or filter for a data-changing query."
     return corrected
+

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from difflib import get_close_matches
 
 from prompt_toolkit.completion import Completer, Completion
 
@@ -61,13 +62,16 @@ CLAUSE_KEYWORDS = {
 class SQLCompleter(Completer):
     COMMANDS = (
         "connect", "use", "databases", "tables", "describe", "columns", "sample", "count",
-        "export", "refresh", "history", "ai", "ollama", "ask", "plugins", "help", "quit", "exit",
+        "export", "refresh", "history", "find", "save", "saved", "run",
+        "ai", "ollama", "ask", "plugins", "help", "quit", "exit",
     )
     COMMAND_ARGUMENTS = {
         "describe": (),
         "columns": (),
         "sample": (),
         "count": (),
+        "find": (),
+        "run": (),
         "ai": ("on", "off", "reset"),
         "ollama": ("start", "status", "pull"),
     }
@@ -100,10 +104,19 @@ class SQLCompleter(Completer):
     def _matching(items: list[str], word: str, start_position: int):
         """Yield unique case-insensitive prefix matches in their original form."""
         seen = set()
-        for item in items:
-            if item and item.lower().startswith(word.lower()) and item.lower() not in seen:
+        matches = [item for item in items if item and item.lower().startswith(word.lower())]
+        fuzzy = False
+        if not matches and len(word) >= 3:
+            matches = get_close_matches(word, list(dict.fromkeys(i for i in items if i)), n=5, cutoff=0.72)
+            fuzzy = bool(matches)
+        for item in matches:
+            if item.lower() not in seen:
                 seen.add(item.lower())
-                yield Completion(item, start_position=start_position)
+                yield Completion(
+                    item,
+                    start_position=start_position,
+                    display_meta="similar name" if fuzzy else "",
+                )
 
     def _command_completions(self, text: str):
         """Complete SQLCLI commands and their simple local arguments."""
@@ -125,6 +138,15 @@ class SQLCompleter(Completer):
             items.extend(self.database.database_names)
         if command in {"describe", "columns", "sample", "count"}:
             items.extend(self.database.tables)
+        if command == "find":
+            items.extend(self.database.tables)
+            items.extend(column for columns in self.database.tables.values() for column in columns)
+        if command == "run":
+            try:
+                from .queries import load_queries
+                items.extend(load_queries())
+            except RuntimeError:
+                pass
         items.extend(self.plugins.completions(text))
         return self._matching(items, word, -len(word))
 

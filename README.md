@@ -88,7 +88,7 @@ For example:
 SELECT * FROM your_table_name LIMIT 10;
 ```
 
-Press **Tab** to see suggestions for SQLCLI commands, database names, SQL words, tables, columns, and functions. Suggestions change with the SQL you're writing: after `FROM` SQLCLI offers tables, and after `WHERE` it offers columns from the tables in your query. Date and time functions are included too. For example, type `CUR` for `CURDATE` or `CURTIME`, or type `INTERVAL ` to see units such as `DAY`, `MONTH`, and `YEAR`.
+Press **Tab** to see suggestions for SQLCLI commands, database names, SQL words, tables, columns, and functions. If there is no exact prefix match, SQLCLI also suggests close matches for likely typos. Suggestions change with the SQL you're writing: after `FROM` SQLCLI offers tables, and after `WHERE` it offers columns from the tables in your query. Date and time functions are included too. For example, type `CUR` for `CURDATE` or `CURTIME`, or type `INTERVAL ` to see units such as `DAY`, `MONTH`, and `YEAR`.
 
 ```sql
 SELECT CURRENT_DATE(), CURRENT_TIME(), NOW();
@@ -108,6 +108,10 @@ Type `:history` to review recent input saved across sessions, or `:history 50` t
 | `:sample your_table_name 5` | Previews up to 5 rows |
 | `:count your_table_name` | Counts rows in a table |
 | `:refresh` | Reloads database, table, and column suggestions |
+| `:find text` | Finds matching table and column names |
+| `:save name SELECT ...` | Saves a named SQL statement |
+| `:saved` | Lists saved SQL statements |
+| `:run name` | Runs a saved statement with the usual safety checks |
 | `:history [n]` | Shows the most recent commands (default 20; maximum 100) |
 | `:help` | Shows help |
 | `:quit` | Closes SQLCLI |
@@ -119,6 +123,8 @@ To save a query's results as a new CSV file, use `:export`:
 ```
 
 The CSV is saved in the folder where SQLCLI is running. SQLCLI won't overwrite an existing file.
+
+Saved queries are stored in `.sqlcli_queries.json` in your user profile, so they remain available across project folders. Query results display 20 rows at a time; press Enter for the next page or `q` to stop. SQL execution time appears after each query.
 
 ## Optional AI helper
 

@@ -92,13 +92,13 @@ def _offer_ai_correction(sql, error, database, settings, session, ai_enabled: bo
 
 
 def print_banner(settings, database, plugin_count: int) -> None:
-    state = "<ansigreen>● connected</ansigreen>" if database.connected else "<ansiyellow>○ offline</ansiyellow>"
+    state = "<ansigreen>â— connected</ansigreen>" if database.connected else "<ansiyellow>â—‹ offline</ansiyellow>"
     target = f"{settings.host}:{settings.port}"
     if settings.database:
         target += f" / {settings.database}"
     print_formatted_text(HTML(f"\n<ansicyan><b>SQLCLI</b></ansicyan>  <ansigray>Workbench {__version__}</ansigray>"))
     print_formatted_text(HTML(f"{state}  <ansigray>{target}</ansigray>"))
-    print_formatted_text(HTML(f"<ansigray>Tab suggestions  ·  :help commands  ·  :quit exit  ·  {plugin_count} plugin(s)</ansigray>\n"))
+    print_formatted_text(HTML(f"<ansigray>Tab suggestions  Â·  :help commands  Â·  :quit exit  Â·  {plugin_count} plugin(s)</ansigray>\n"))
 
 
 def print_help() -> None:
@@ -113,6 +113,7 @@ def print_help() -> None:
   :export <file.csv> SELECT ...
                         Save a read-only SELECT result as a new CSV file
   :refresh              Refresh database, table, and column suggestions
+  :history [n]          Show recent commands (default: 20, max: 100)
   :ai on|off|reset      Enable, disable, or reset the local AI model
   :ollama start         Start Ollama and connect the configured model
   :ollama status        Check Ollama and model connection
@@ -124,6 +125,24 @@ def print_help() -> None:
 
 Type SQL and press Enter; statements run when terminated with a semicolon.
 Tab shows suggestions. Up/Down navigates suggestions and command history.""")
+
+
+def print_history(history, argument: str = "") -> None:
+    """Display recent prompt entries with stable session-local numbering."""
+    try:
+        limit = int(argument) if argument else 20
+    except ValueError as exc:
+        raise RuntimeError("Usage: :history [number from 1 to 100]") from exc
+    if not 1 <= limit <= 100:
+        raise RuntimeError("History limit must be between 1 and 100.")
+    entries = history.get_strings()
+    if not entries:
+        print("No command history yet.")
+        return
+    recent = entries[-limit:]
+    start = len(entries) - len(recent) + 1
+    for index, entry in enumerate(recent, start):
+        print(f"{index:>4}  {' '.join(entry.splitlines())}")
 
 
 def main() -> None:
@@ -146,7 +165,7 @@ def main() -> None:
         style=STYLE,
         prompt_continuation="... ",
         bottom_toolbar=lambda: HTML(
-            "  <b>Enter</b> new line  ·  statement runs after <b>;</b>  ·  <b>Ctrl+C</b> cancel"
+            "  <b>Enter</b> new line  Â·  statement runs after <b>;</b>  Â·  <b>Ctrl+C</b> cancel"
         ),
     )
     buffer = ""
@@ -159,7 +178,7 @@ def main() -> None:
                 line = session.prompt([
                     ("class:prompt", "sqlcli "),
                     ("class:database", f"{db}{state} "),
-                    ("", "› "),
+                    ("", "â€º "),
                 ])
             except EOFError:
                 break
@@ -256,6 +275,8 @@ def main() -> None:
                             f"Loaded {len(database.tables)} tables and "
                             f"{len(database.database_names)} database name(s) for autocomplete."
                         )
+                    elif command == "history":
+                        print_history(session.history, argument.strip())
                     elif command == "ai":
                         mode = argument.strip().lower()
                         if mode == "reset":
@@ -376,3 +397,4 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+

@@ -61,7 +61,7 @@ CLAUSE_KEYWORDS = {
 class SQLCompleter(Completer):
     COMMANDS = (
         "connect", "use", "databases", "tables", "describe", "columns", "sample", "count",
-        "export", "refresh", "ai", "ollama", "ask", "plugins", "help", "quit", "exit",
+        "export", "refresh", "history", "ai", "ollama", "ask", "plugins", "help", "quit", "exit",
     )
     COMMAND_ARGUMENTS = {
         "describe": (),
@@ -206,3 +206,4 @@ class SQLCompleter(Completer):
         # consulted in every context, including table names and alias columns.
         items.extend(self.plugins.completions(before_cursor))
         yield from self._matching(items, word, start_position)
+

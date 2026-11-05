@@ -9,9 +9,9 @@ Examples use placeholder names only. Your database records are not included in t
 ## What you need
 
 - **Windows**
-- **Python 3.10 or newer** — [Download Python](https://www.python.org/downloads/windows/). During setup, check **Add Python to PATH**.
-- **XAMPP** — [Download XAMPP](https://www.apachefriends.org/download.html). You need this to run your database.
-- **Ollama** — optional. You only need it if you want to use the AI helper.
+- **Python 3.10 or newer** â€” [Download Python](https://www.python.org/downloads/windows/). During setup, check **Add Python to PATH**.
+- **XAMPP** â€” [Download XAMPP](https://www.apachefriends.org/download.html). You need this to run your database.
+- **Ollama** â€” optional. You only need it if you want to use the AI helper.
 
 ## First-time setup
 
@@ -94,7 +94,7 @@ Press **Tab** to see suggestions for SQLCLI commands, database names, SQL words,
 SELECT CURRENT_DATE(), CURRENT_TIME(), NOW();
 ```
 
-Type `:help` to see all commands. If SQLCLI says **Waiting for ;**, finish the SQL statement with `;`. Press **Ctrl+C** to cancel an unfinished line.
+Type `:history` to review recent input saved across sessions, or `:history 50` to show more. Type `:help` to see all commands. If SQLCLI says **Waiting for ;**, finish the SQL statement with `;`. Press **Ctrl+C** to cancel an unfinished line.
 
 ## Handy commands
 
@@ -108,6 +108,7 @@ Type `:help` to see all commands. If SQLCLI says **Waiting for ;**, finish the S
 | `:sample your_table_name 5` | Previews up to 5 rows |
 | `:count your_table_name` | Counts rows in a table |
 | `:refresh` | Reloads database, table, and column suggestions |
+| `:history [n]` | Shows the most recent commands (default 20; maximum 100) |
 | `:help` | Shows help |
 | `:quit` | Closes SQLCLI |
 
@@ -129,9 +130,9 @@ The setup program checks the number of CPU cores, current CPU use, total RAM, an
 
 | Model | A good starting point | Download size (approx.) |
 | --- | --- | --- |
-| `qwen3.5:0.8b` | Older or lower-spec computers, including computers with only 1–2 CPU cores | 1.2–1.3 GB |
-| `qwen3.5:2b` | A modest or midrange computer when the 4B model does not fit safely | 2.7–3.1 GB |
-| `qwen3.5:4b` | A midrange computer with enough free memory and at least 3 CPU cores | 3.3–4.0 GB |
+| `qwen3.5:0.8b` | Older or lower-spec computers, including computers with only 1â€“2 CPU cores | 1.2â€“1.3 GB |
+| `qwen3.5:2b` | A modest or midrange computer when the 4B model does not fit safely | 2.7â€“3.1 GB |
+| `qwen3.5:4b` | A midrange computer with enough free memory and at least 3 CPU cores | 3.3â€“4.0 GB |
 
 Smaller models need less memory and are usually quicker on older CPUs, but may make less accurate SQL suggestions. The installer uses the current free RAM as well as the computer's total RAM, so it can recommend a smaller model when many other programs are open. It skips optional AI setup if no listed model currently fits the safety check. You can rerun `setup.bat` later, after closing programs, to check again. Model sizes are listed in the [official Ollama Qwen3.5 library](https://ollama.com/library/qwen3.5).
 
@@ -163,13 +164,13 @@ To help protect your computer, SQLCLI checks CPU use and available RAM before an
 
 ## If something goes wrong
 
-- **“MySQL is offline”** — start MySQL in XAMPP, then type `:connect` inside SQLCLI.
-- **“No database selected”** — type `:databases`, then `:use` followed by a database name from the list.
-- **“Table not found”** — make sure you selected the right database, then type `:tables` and check the spelling.
-- **“Access denied”** — check the MySQL user name and password in `.env` inside the SQLCLI folder. Many XAMPP setups use user `root` and a blank password, but yours may differ.
-- **“Ollama unavailable”** — type `:ollama start`, then `:ollama status`.
-- **“AI paused to protect your laptop”** — close other programs and try again when CPU and projected RAM use are below 80%. If this happens often, rerun `setup.bat` and choose a smaller recommended model such as `qwen3.5:2b` or `qwen3.5:0.8b`.
-- **Python is not recognized** — install Python 3.10 or newer, select **Add Python to PATH**, and run `setup.bat` again.
+- **â€œMySQL is offlineâ€** â€” start MySQL in XAMPP, then type `:connect` inside SQLCLI.
+- **â€œNo database selectedâ€** â€” type `:databases`, then `:use` followed by a database name from the list.
+- **â€œTable not foundâ€** â€” make sure you selected the right database, then type `:tables` and check the spelling.
+- **â€œAccess deniedâ€** â€” check the MySQL user name and password in `.env` inside the SQLCLI folder. Many XAMPP setups use user `root` and a blank password, but yours may differ.
+- **â€œOllama unavailableâ€** â€” type `:ollama start`, then `:ollama status`.
+- **â€œAI paused to protect your laptopâ€** â€” close other programs and try again when CPU and projected RAM use are below 80%. If this happens often, rerun `setup.bat` and choose a smaller recommended model such as `qwen3.5:2b` or `qwen3.5:0.8b`.
+- **Python is not recognized** â€” install Python 3.10 or newer, select **Add Python to PATH**, and run `setup.bat` again.
 
 ## Your settings and files
 
@@ -182,3 +183,4 @@ Python plugins can add commands and suggestions. See [plugins/README.md](plugins
 ## License
 
 SQLCLI is licensed under the MIT License. See [LICENSE](LICENSE).
+

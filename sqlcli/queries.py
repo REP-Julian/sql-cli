@@ -42,4 +42,3 @@ def get_query(name: str) -> str:
         return load_queries()[name]
     except KeyError as exc:
         raise RuntimeError(f"No saved query named '{name}'. Use :saved to list saved queries.") from exc
-

@@ -9,6 +9,7 @@ import mysql.connector
 from mysql.connector import MySQLConnection
 
 from .config import Settings
+from .sql_safety import split_sql_statements
 
 
 @dataclass
@@ -131,17 +132,31 @@ class Database:
     def execute(self, sql: str) -> tuple[list[str] | None, list[tuple] | None, int]:
         if not self.connected:
             raise RuntimeError("Not connected. Use :connect first.")
+        statements = split_sql_statements(sql)
+        if not statements:
+            statements = [sql]
         cursor = self.connection.cursor()
         try:
-            cursor.execute(sql)
-            # MySQL's USE statement changes the server session, but the
-            # application settings also drive the prompt and autocomplete.
-            selected = re.fullmatch(r"\s*USE\s+`?([\w$]+)`?\s*;?\s*", sql, re.IGNORECASE)
-            if selected:
-                self.settings.database = selected.group(1)
-                self.refresh_schema()
-            if cursor.with_rows:
-                return [column[0] for column in cursor.description], cursor.fetchall(), cursor.rowcount
-            return None, None, cursor.rowcount
+            headers: list[str] | None = None
+            rows: list[tuple] | None = None
+            total_affected = 0
+            for stmt in statements:
+                cursor.execute(stmt)
+                selected = re.fullmatch(r"\s*USE\s+`?([\w$]+)`?\s*;?\s*", stmt, re.IGNORECASE)
+                if selected:
+                    self.settings.database = selected.group(1)
+                    self.refresh_schema()
+                if cursor.with_rows:
+                    headers = [column[0] for column in cursor.description]
+                    rows = cursor.fetchall()
+                    total_affected = cursor.rowcount
+                else:
+                    headers = None
+                    rows = None
+                    if cursor.rowcount and cursor.rowcount > 0:
+                        total_affected += cursor.rowcount
+                    else:
+                        total_affected = cursor.rowcount
+            return headers, rows, total_affected
         finally:
             cursor.close()

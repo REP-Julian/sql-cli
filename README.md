@@ -9,9 +9,9 @@ Examples use placeholder names only. Your database records are not included in t
 ## What you need
 
 - **Windows**
-- **Python 3.10 or newer** â€” [Download Python](https://www.python.org/downloads/windows/). During setup, check **Add Python to PATH**.
-- **XAMPP** â€” [Download XAMPP](https://www.apachefriends.org/download.html). You need this to run your database.
-- **Ollama** â€” optional. You only need it if you want to use the AI helper.
+- **Python 3.10 or newer** — [Download Python](https://www.python.org/downloads/windows/). During setup, check **Add Python to PATH**.
+- **XAMPP** — [Download XAMPP](https://www.apachefriends.org/download.html). You need this to run your database.
+- **Ollama** — optional. You only need it if you want to use the AI helper.
 
 ## First-time setup
 
@@ -109,7 +109,17 @@ Type `:history` to review recent input saved across sessions, or `:history 50` t
 | `:count your_table_name` | Counts rows in a table |
 | `:refresh` | Reloads database, table, and column suggestions |
 | `:find text` | Finds matching table and column names |
-| `:save name SELECT ...` | Saves a named SQL statement |
+| :dashboard [port] | Launches SQLite Studio-style Web Dashboard in your browser |
+| :engine [type] | Switches active database engine: mysql, sqlite, nosql |
+| :sqlite [path] | Switches to local zero-config SQLite engine (workspace.sqlite) |
+| :nosql [path] | Switches to local JSON document store with MongoDB syntax |
+| :autopilot <goal> | Generates & executes queries from natural language requests |
+| :learn [topic] | Interactive W3Schools SQL tutor (syntax, explanation & examples) |
+| :paste [run] | Pastes SQL from system clipboard (or press Ctrl+V) |
+| :copy [last|sql] | Copies last query or custom text to clipboard |
+| :save <name> [SQL] | Saves a named SQL statement (defaults to last query) |
+| :save file <file.sql> [SQL] | Saves an SQL statement to a file on disk |
+| :save output <file.csv|json|txt> | Saves last query result set to disk |
 | `:saved` | Lists saved SQL statements |
 | `:run name` | Runs a saved statement with the usual safety checks |
 | `:history [n]` | Shows the most recent commands (default 20; maximum 100) |
@@ -126,9 +136,29 @@ The CSV is saved in the folder where SQLCLI is running. SQLCLI won't overwrite a
 
 Saved queries are stored in `.sqlcli_queries.json` in your user profile, so they remain available across project folders. Query results display 20 rows at a time; press Enter for the next page or `q` to stop. SQL execution time appears after each query.
 
+
+## SQLite Studio Web Dashboard & Multi-Engine Studio
+
+Type :dashboard inside SQLCLI to launch the built-in browser-based SQLite Studio interface.
+
+- **3 Engine Support**: Switch instantly between **SQL (MySQL via XAMPP)**, **SQLite (local zero-config database workspace.sqlite)**, and **NoSQL (JSON document collection store workspace_nosql.db)**.
+- **Previous Work & Codes History**: View all past queries, execution status (SUCCESS/ERROR), elapsed milliseconds, and row counts. Click any past query to load it directly back into the editor.
+- **Visual Error HUD**: Pinpoints the exact line number, column offset, token typo, and offers one-click surgical fixes.
+- **W3Schools SQL Tutor Drawer**: Browse 60+ SQL topics with full syntax, explanations, and executable templates.
+- **Autopilot Bar**: Generate SQL from plain English directly inside the web studio.
+- **Exporting**: One-click download of any query result set as CSV or JSON.
+
+## Multiline Editing & Clipboard
+
+- **Shift+Tab**: Inserts a new line with 4-space indentation anywhere.
+- **Smart Enter**: Inserts a new line while a statement is open (e.g. CREATE TABLE students (). Pressing Enter on a completed ; statement executes it immediately.
+- **Alt+Enter**: Forces execution of the statement buffer immediately.
+- **Ctrl+V or :paste**: Seamlessly paste multi-line SQL from the Windows clipboard.
+- **:copy**: Copies the last executed query or custom SQL to the Windows clipboard.
+
 ## Optional AI helper
 
-The AI helper is optional. It uses Ollama on your own computer. Downloading a model needs internet; after it is installed, you can ask for SQL without internet.
+The AI helper is optional. It uses Ollama on your own computer. Downloading a model needs internet; after it is installed, both chat and SQL suggestions work offline.
 
 ### Choosing an AI model for your computer
 
@@ -136,9 +166,9 @@ The setup program checks the number of CPU cores, current CPU use, total RAM, an
 
 | Model | A good starting point | Download size (approx.) |
 | --- | --- | --- |
-| `qwen3.5:0.8b` | Older or lower-spec computers, including computers with only 1â€“2 CPU cores | 1.2â€“1.3 GB |
-| `qwen3.5:2b` | A modest or midrange computer when the 4B model does not fit safely | 2.7â€“3.1 GB |
-| `qwen3.5:4b` | A midrange computer with enough free memory and at least 3 CPU cores | 3.3â€“4.0 GB |
+| `qwen3.5:0.8b` | Older or lower-spec computers, including computers with only 1–2 CPU cores | 1.2–1.3 GB |
+| `qwen3.5:2b` | A modest or midrange computer when the 4B model does not fit safely | 2.7–3.1 GB |
+| `qwen3.5:4b` | A midrange computer with enough free memory and at least 3 CPU cores | 3.3–4.0 GB |
 
 Smaller models need less memory and are usually quicker on older CPUs, but may make less accurate SQL suggestions. The installer uses the current free RAM as well as the computer's total RAM, so it can recommend a smaller model when many other programs are open. It skips optional AI setup if no listed model currently fits the safety check. You can rerun `setup.bat` later, after closing programs, to check again. Model sizes are listed in the [official Ollama Qwen3.5 library](https://ollama.com/library/qwen3.5).
 
@@ -160,23 +190,44 @@ Then ask a question in plain language:
 :ask show the latest 10 records
 ```
 
-If SQLCLI says the model is missing, connect to the internet and type `:ollama pull`. If AI says it is disabled, type `:ai on`.
+### Chat with the local AI
+
+Use `:chat` for ordinary conversation or how-to questions. It does not require a MySQL connection and does not run SQL:
+
+```text
+:chat hello
+:chat how do I remove a column in MySQL?
+```
+
+SQLCLI remembers the last 8 chat messages while it is open. To explicitly save a personal detail for later chat sessions, use:
+
+```text
+:chat remember I prefer short explanations
+:chat memory
+:chat forget 1
+```
+
+Saved details stay in `.sqlcli_memory.json` in your Windows user profile. Use `:chat forget all` to remove every saved detail, or `:chat reset` to clear only the current session's conversation. SQLCLI does not automatically save chat messages or retrain the model.
+
+The configured local model can answer from its training and the conversation, but it does not have internet access and cannot know everything or guarantee that every answer is correct. This project currently selects the custom `qwen3.5:2b-uncensored` Ollama tag. It uses the [Qwen3.5 2B uncensored Q4_K_M model](https://huggingface.co/HauhauCS/Qwen3.5-2B-Uncensored-HauhauCS-Aggressive); the variant is designed to remove refusals, not to add knowledge. The GGUF file is not included in the repository. On another computer, import the file into that computer's Ollama model store with a `Modelfile` containing `FROM <path-to-the-GGUF-file>`, then set `SQLCLI_OLLAMA_MODEL=qwen3.5:2b-uncensored` in `.env`.
+
+If SQLCLI says the configured model is missing, type `:ollama status`. The custom `qwen3.5:2b-uncensored` tag must be imported from its GGUF file; `:ollama pull` downloads registry models only. If AI says it is disabled, type `:ai on`.
 
 **`:ask` only suggests SQL; it never runs the query for you.** Read the suggestion before copying it into SQLCLI. SQLCLI asks you to confirm data-changing commands. Keep a backup before changing important data.
 
 When AI is on, it can understand obvious spelling mistakes in `:ask` requests. If a SQL statement returns a syntax, unknown-column, ambiguous-column, or missing-table error, SQLCLI can offer a corrected version. It shows the suggestion first and runs it only if you type `YES`; data-changing SQL still displays a warning.
 
-To help protect your computer, SQLCLI checks CPU use and available RAM before an AI request. It pauses before starting a request if CPU use is already 80% or higher, or if loading the selected model is predicted to bring RAM use to 80% or higher. The Qwen3.5 4B model gets a 4.5 GB working-memory allowance, including Ollama overhead. Ollama is limited to one request at a time and at most two CPU threads per request. Close other programs and try again later if AI is paused. These checks reduce load, but cannot enforce a hard real-time CPU ceiling or measure temperature; stop using local AI if the computer becomes too hot or unresponsive.
+To help protect your computer, SQLCLI checks CPU use and available RAM before an AI request. It pauses before starting a request if CPU use is already 80% or higher, or if loading the selected model is predicted to bring RAM use to 80% or higher. Its working-memory allowances include Ollama overhead: 3.6 GB for Qwen3.5 2B and 4.5 GB for Qwen3.5 4B. Ollama is limited to one request at a time and at most two CPU threads per request. Close other programs and try again later if AI is paused. These checks reduce load, but cannot enforce a hard real-time CPU ceiling or measure temperature; stop using local AI if the computer becomes too hot or unresponsive.
 
 ## If something goes wrong
 
-- **â€œMySQL is offlineâ€** â€” start MySQL in XAMPP, then type `:connect` inside SQLCLI.
-- **â€œNo database selectedâ€** â€” type `:databases`, then `:use` followed by a database name from the list.
-- **â€œTable not foundâ€** â€” make sure you selected the right database, then type `:tables` and check the spelling.
-- **â€œAccess deniedâ€** â€” check the MySQL user name and password in `.env` inside the SQLCLI folder. Many XAMPP setups use user `root` and a blank password, but yours may differ.
-- **â€œOllama unavailableâ€** â€” type `:ollama start`, then `:ollama status`.
-- **â€œAI paused to protect your laptopâ€** â€” close other programs and try again when CPU and projected RAM use are below 80%. If this happens often, rerun `setup.bat` and choose a smaller recommended model such as `qwen3.5:2b` or `qwen3.5:0.8b`.
-- **Python is not recognized** â€” install Python 3.10 or newer, select **Add Python to PATH**, and run `setup.bat` again.
+- **“MySQL is offline”** — start MySQL in XAMPP, then type `:connect` inside SQLCLI.
+- **“No database selected”** — type `:databases`, then `:use` followed by a database name from the list.
+- **“Table not found”** — make sure you selected the right database, then type `:tables` and check the spelling.
+- **“Access denied”** — check the MySQL user name and password in `.env` inside the SQLCLI folder. Many XAMPP setups use user `root` and a blank password, but yours may differ.
+- **“Ollama unavailable”** — type `:ollama start`, then `:ollama status`.
+- **“AI paused to protect your laptop”** — close other programs and try again when CPU and projected RAM use are below 80%. If this happens often, rerun `setup.bat` and choose a smaller recommended model such as `qwen3.5:2b` or `qwen3.5:0.8b`.
+- **Python is not recognized** — install Python 3.10 or newer, select **Add Python to PATH**, and run `setup.bat` again.
 
 ## Your settings and files
 
@@ -189,4 +240,3 @@ Python plugins can add commands and suggestions. See [plugins/README.md](plugins
 ## License
 
 SQLCLI is licensed under the MIT License. See [LICENSE](LICENSE).
-

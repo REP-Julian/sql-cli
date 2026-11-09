@@ -15,3 +15,7 @@ build/
 dist/
 models/
 ollama/
+*.sqlite
+*.db
+*.db-journal
+*.sqlite-journal

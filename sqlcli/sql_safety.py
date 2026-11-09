@@ -147,3 +147,69 @@ def inspect_sql(sql: str) -> SQLSafety:
         for pair in (("INTO", "OUTFILE"), ("INTO", "DUMPFILE"), ("FOR", "UPDATE"))
     )
     return SQLSafety(verb, verb in _MUTATING or special_select, missing_where, multiple_statements)
+
+
+def split_sql_statements(sql: str) -> list[str]:
+    """Split a SQL script into individual statements on top-level semicolons."""
+    statements: list[str] = []
+    start = 0
+    depth = 0
+    index = 0
+    size = len(sql)
+    while index < size:
+        char = sql[index]
+        following = sql[index + 1] if index + 1 < size else ""
+        if char in "'\"":
+            quote = char
+            index += 1
+            while index < size:
+                if sql[index] == "\\":
+                    index += 2
+                elif sql[index] == quote:
+                    if index + 1 < size and sql[index + 1] == quote:
+                        index += 2
+                    else:
+                        index += 1
+                        break
+                else:
+                    index += 1
+            continue
+        if char == "`":
+            index += 1
+            while index < size:
+                if sql[index] == "`":
+                    if index + 1 < size and sql[index + 1] == "`":
+                        index += 2
+                    else:
+                        index += 1
+                        break
+                else:
+                    index += 1
+            continue
+        if char == "#" or (char == "-" and following == "-" and (index + 2 == size or sql[index + 2].isspace())):
+            newline = sql.find("\n", index)
+            index = size if newline == -1 else newline + 1
+            continue
+        if char == "/" and following == "*":
+            end = sql.find("*/", index + 2)
+            index = size if end == -1 else end + 2
+            continue
+        if char == "(":
+            depth += 1
+            index += 1
+            continue
+        if char == ")":
+            depth = max(0, depth - 1)
+            index += 1
+            continue
+        if char == ";" and depth == 0:
+            stmt = sql[start:index].strip()
+            if stmt:
+                statements.append(stmt)
+            start = index + 1
+        index += 1
+
+    tail = sql[start:].strip()
+    if tail:
+        statements.append(tail)
+    return statements
